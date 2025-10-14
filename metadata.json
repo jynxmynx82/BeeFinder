@@ -1,0 +1,5 @@
+{
+  "name": "Bee Finder",
+  "description": "An application that highlights the plight of bees by generating a localized, weather-aware image of a bee in a flower found in the zip code.",
+  "requestFramePermissions": []
+}
