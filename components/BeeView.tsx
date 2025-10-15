@@ -13,7 +13,6 @@ interface BeeViewProps {
 
 export const BeeView: React.FC<BeeViewProps> = ({ beeData, videoUrl, animationStep, animationMessage, onAnimate }) => {
   const [showPrompt, setShowPrompt] = useState(false);
-  const [isTooltipVisible, setIsTooltipVisible] = useState(false);
 
   return (
     <div className="max-w-2xl mx-auto bg-white rounded-2xl shadow-lg overflow-hidden border-4 border-yellow-300">
@@ -39,40 +38,17 @@ export const BeeView: React.FC<BeeViewProps> = ({ beeData, videoUrl, animationSt
               className="flex items-center text-sm text-gray-600 hover:text-gray-900 transition"
               >
               <InfoIcon className="w-4 h-4 mr-2" />
-              <span>{showPrompt ? 'Hide' : 'Show'} Generation Prompt</span>
+              <span>{showPrompt ? 'Hide' : 'Show'} Prompt</span>
               </button>
 
               {animationStep === 'idle' && (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={onAnimate}
-                    className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-purple-600 rounded-lg hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition duration-200"
-                    aria-describedby="animation-tooltip"
-                  >
-                    <AnimateIcon className="w-4 h-4" />
-                    Animate Scene
-                  </button>
-                  <div className="relative">
-                    <button
-                        onMouseEnter={() => setIsTooltipVisible(true)}
-                        onMouseLeave={() => setIsTooltipVisible(false)}
-                        onFocus={() => setIsTooltipVisible(true)}
-                        onBlur={() => setIsTooltipVisible(false)}
-                        aria-label="More information about animation"
-                    >
-                      <InfoIcon className="w-5 h-5 text-gray-500" />
-                    </button>
-                    {isTooltipVisible && (
-                      <div
-                        id="animation-tooltip"
-                        role="tooltip"
-                        className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-60 p-2 text-xs text-white bg-gray-800 rounded-lg shadow-lg"
-                      >
-                        Animation is powered by Veo 2, a new model in preview. Availability may be limited based on your region.
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <button
+                  onClick={onAnimate}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-purple-600 rounded-lg hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition duration-200"
+                >
+                  <AnimateIcon className="w-4 h-4" />
+                  Animate Scene
+                </button>
               )}
           </div>
 

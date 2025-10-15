@@ -78,8 +78,8 @@ export const generateBeeVideo = async (
       model: 'veo-2.0-generate-001',
       prompt: 'Animate the scene with a gentle, cinematic subtle motion.',
       image: {
-        bytesBase64Encoded: base64ImageData,
-        mimeType: "image/png",
+        imageBytes: base64ImageData,
+        mimeType: mimeType,
       },
       config: {
         numberOfVideos: 1,
