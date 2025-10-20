@@ -11,27 +11,15 @@ export interface LocationData {
   }[];
 }
 
-export interface WeatherPointData {
-    properties: {
-        forecast: string;
-        timeZone: string;
-    }
-}
-
-export interface WeatherData {
-    properties: {
-        periods: {
-            number: number;
-            name: string;
-            isDaytime: boolean;
-            temperature: number;
-            temperatureUnit: string;
-            windSpeed: string;
-            windDirection: string;
-            shortForecast: string;
-            detailedForecast: string;
-        }[];
-    };
+export interface OpenWeatherData {
+  weather: {
+    main: string;
+    description: string;
+  }[];
+  main: {
+    temp: number;
+  };
+  timezone: number;
 }
 
 export interface BeeData {
@@ -60,7 +48,6 @@ export interface LocationInfo {
 
 export interface WeatherInfo {
   weatherDescription: string;
-  timeZone: string;
   currentHour: number;
 }
 

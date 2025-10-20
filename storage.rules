@@ -1,0 +1,12 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Allow anyone to read files in the 'videos' directory
+    match /videos/{videoId} {
+      allow read;
+      // Disallow public write access. Only the backend (via Admin SDK) can write.
+      allow write: if false;
+    }
+  }
+}

@@ -1,0 +1,8 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.icon-container svg {
+    width: 100px;
+    height: 100px;
+}

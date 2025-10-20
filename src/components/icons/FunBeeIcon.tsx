@@ -2,10 +2,11 @@ import React from 'react';
 
 interface FunBeeIconProps extends React.SVGProps<SVGSVGElement> {
   color?: string;
+  className?: string;
 }
 
-export const FunBeeIcon: React.FC<FunBeeIconProps> = ({ color = '#ffba55', ...props }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" {...props}>
+export const FunBeeIcon: React.FC<FunBeeIconProps> = ({ color = '#ffba55', className, ...props }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" className={className} {...props}>
         <g>
             <path fill="#7c7d7d" d="M26,10V4a3,3,0,0,1,6,0V5a1,1,0,0,1-2,0V4a1,1,0,0,0-2,0v6A1,1,0,0,1,26,10Z"/>
             <path fill="#747575" d="M20,10V4a1,1,0,0,0-2,0V5a1,1,0,0,1-2,0V4a3,3,0,0,1,6,0v6A1,1,0,0,1,20,10Z"/>

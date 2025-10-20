@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { US_STATES } from '../constants';
-import type { LocationSubmitData } from '../types';
+import { US_STATES } from '@/src/constants';
+import type { LocationSubmitData } from '@/src/types';
 
 interface LocationInputProps {
   onSubmit: (data: LocationSubmitData) => void;
