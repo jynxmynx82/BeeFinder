@@ -83,6 +83,7 @@ const COMMON_FLOWERS = [
 
 // --- Main V2 Function ---
 export const generateImageAndText = functions.https.onCall(async (data) => {
+  functions.logger.info('Function execution started', { data });
   const {zipcode, city, state} = data;
 
   if (
@@ -149,9 +150,11 @@ export const generateImageAndText = functions.https.onCall(async (data) => {
       "and capture the bee in mid-action, collecting pollen.";
 
     // 4. Call Gemini APIs
+    functions.logger.info('Starting Gemini API calls');
     const genAI = new GoogleGenerativeAI(getGeminiApiKey());
 
     // --- 4a. Generate Text ---
+    functions.logger.info('Generating text content');
     const textModel = genAI.getGenerativeModel({
       model: "gemini-2.5-flash",
       generationConfig: textGenerationConfig,
@@ -188,6 +191,7 @@ export const generateImageAndText = functions.https.onCall(async (data) => {
     }
 
     // --- 4b. Generate Image ---
+    functions.logger.info('Generating image content');
     // Ensure we never pass a responseMimeType to the image model. Some
     // image-capable models don't support JSON/text mode; remove that key
     // if present to force SDK/model defaults for image output.
@@ -251,14 +255,58 @@ export const generateImageAndText = functions.https.onCall(async (data) => {
         throw new functions.https.HttpsError('internal', 'Image generation failed. See logs for details.');
       }
     }
+    
+    // Log the raw response structure immediately after generation
+    functions.logger.info('Raw image generation response:', {
+      hasResponse: !!imageResult.response,
+      hasCandidates: !!imageResult.response?.candidates,
+      candidatesLength: imageResult.response?.candidates?.length || 0,
+      firstCandidate: imageResult.response?.candidates?.[0] ? 'exists' : 'missing',
+      firstCandidateContent: imageResult.response?.candidates?.[0]?.content ? 'exists' : 'missing',
+      firstCandidateParts: imageResult.response?.candidates?.[0]?.content?.parts ? 'exists' : 'missing',
+      partsLength: imageResult.response?.candidates?.[0]?.content?.parts?.length || 0
+    });
+    
     let imageResultCandidate = imageResult;
-    let imagePart = imageResultCandidate.response.candidates?.[0]?.content.parts[0];
-    // If the model didn't return inline image data, retry once — models can be flaky.
-    if (!imagePart || !('inlineData' in imagePart) || !imagePart.inlineData || !imagePart.inlineData.data) {
-      functions.logger.warn('Image generation returned no inlineData on first attempt. Retrying once. Full response:', imageResultCandidate);
+    
+    // Log the initial response structure
+    functions.logger.info('Initial image generation response structure:', {
+      hasCandidates: !!imageResultCandidate.response.candidates,
+      candidatesLength: imageResultCandidate.response.candidates?.length || 0,
+      hasContent: !!imageResultCandidate.response.candidates?.[0]?.content,
+      hasParts: !!imageResultCandidate.response.candidates?.[0]?.content?.parts,
+      partsLength: imageResultCandidate.response.candidates?.[0]?.content?.parts?.length || 0,
+      firstPartKeys: imageResultCandidate.response.candidates?.[0]?.content?.parts?.[0] ? Object.keys(imageResultCandidate.response.candidates[0].content.parts[0]) : 'no first part'
+    });
+    
+    // Look for image data in all parts, not just the first one
+    let imagePart = null;
+    const parts = imageResultCandidate.response.candidates?.[0]?.content?.parts || [];
+    
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      if (part && 'inlineData' in part && part.inlineData && part.inlineData.data) {
+        imagePart = part;
+        functions.logger.info(`Found image data in part ${i}`);
+        break;
+      }
+    }
+    
+    // If no image data found, retry once
+    if (!imagePart) {
+      functions.logger.warn('Image generation returned no inlineData on first attempt. Retrying once.');
       try {
         imageResultCandidate = await imageModel.generateContent(prompt);
-        imagePart = imageResultCandidate.response.candidates?.[0]?.content.parts[0];
+        const retryParts = imageResultCandidate.response.candidates?.[0]?.content?.parts || [];
+        
+        for (let i = 0; i < retryParts.length; i++) {
+          const part = retryParts[i];
+          if (part && 'inlineData' in part && part.inlineData && part.inlineData.data) {
+            imagePart = part;
+            functions.logger.info(`Found image data in retry part ${i}`);
+            break;
+          }
+        }
       } catch (retryErr) {
         functions.logger.warn('Retry for image generation failed:', retryErr);
       }
@@ -268,7 +316,12 @@ export const generateImageAndText = functions.https.onCall(async (data) => {
     // error. Return the parsed text and a null imageUrl so the client can handle
     // missing images gracefully.
     if (!imagePart || !('inlineData' in imagePart) || !imagePart.inlineData || !imagePart.inlineData.data) {
-      functions.logger.error('Image generation returned unexpected response after retry:', imageResultCandidate);
+      functions.logger.error('Image generation returned unexpected response after retry:', {
+        hasImagePart: !!imagePart,
+        imagePartKeys: imagePart ? Object.keys(imagePart) : 'no imagePart',
+        hasInlineData: imagePart && 'inlineData' in imagePart,
+        inlineDataKeys: imagePart && 'inlineData' in imagePart && imagePart.inlineData ? Object.keys(imagePart.inlineData) : 'no inlineData'
+      });
       return {
         speciesName: parsedText.speciesName,
         fact: parsedText.fact,
@@ -276,16 +329,36 @@ export const generateImageAndText = functions.https.onCall(async (data) => {
       };
     }
 
+    functions.logger.info('Image data found, proceeding to storage upload');
+
     const imageBase64 = imagePart.inlineData.data;
     const mimeType = imagePart.inlineData.mimeType || 'image/png';
+
+    // Log image data info for debugging
+    functions.logger.info('Image data extracted successfully', {
+      hasImageData: !!imageBase64,
+      dataLength: imageBase64?.length || 0,
+      mimeType: mimeType
+    });
 
     // --- 5. Upload image to Cloud Storage and return public URL ---
     // Assumption: either a default bucket is configured for the Admin SDK
     // or a bucket name is provided via functions.config().storage.bucket
     try {
+      functions.logger.info('Starting Cloud Storage upload process');
       const bucketNameFromConfig = functions.config().storage?.bucket;
+      functions.logger.info('Storage configuration', {
+        bucketNameFromConfig: bucketNameFromConfig,
+        hasConfig: !!functions.config().storage
+      });
+      
       const storage = getStorage();
       const bucket = bucketNameFromConfig ? storage.bucket(bucketNameFromConfig) : storage.bucket();
+
+      functions.logger.info('Bucket resolved', {
+        bucketName: bucket?.name,
+        bucketExists: !!bucket
+      });
 
       if (!bucket) {
         throw new functions.https.HttpsError('internal', 'Cloud Storage bucket not configured. Set functions.config().storage.bucket or configure a default bucket in your Firebase project.');
@@ -297,16 +370,28 @@ export const generateImageAndText = functions.https.onCall(async (data) => {
       const extension = mimeType.split('/')[1] || 'png';
       const filePath = `images/generated/${timestamp}-${rnd}.${extension}`;
 
+      functions.logger.info('Preparing file upload', {
+        filePath: filePath,
+        bufferSize: imageBase64.length,
+        mimeType: mimeType
+      });
+
       const file = bucket.file(filePath);
       const buffer = Buffer.from(imageBase64, 'base64');
 
+      functions.logger.info('Buffer created successfully', {
+        bufferLength: buffer.length
+      });
+
       // Save buffer to GCS
+      functions.logger.info('Saving file to Cloud Storage...');
       await file.save(buffer, {
         metadata: {
           contentType: mimeType,
         },
       });
 
+      functions.logger.info('File saved successfully, making public...');
       // Make the file publicly readable
       await file.makePublic();
 
@@ -317,6 +402,7 @@ export const generateImageAndText = functions.https.onCall(async (data) => {
         bucket: bucket.name,
         path: filePath,
         bytes: buffer.length,
+        publicUrl: publicUrl
       });
 
       return {
