@@ -54,3 +54,13 @@ export interface WeatherInfo {
 export type LocationSubmitData = 
   | { type: 'zipcode'; value: string }
   | { type: 'cityState'; city: string; state: string };
+
+// UI state for the app
+export type AppState = 'idle' | 'loading' | 'success' | 'error';
+
+// Lightweight image data passed to the UI
+export interface ImageData {
+  url: string | null;
+  speciesName?: string;
+  fact?: string;
+}

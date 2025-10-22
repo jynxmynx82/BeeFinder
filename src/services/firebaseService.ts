@@ -2,32 +2,63 @@
 import { initializeApp } from "firebase/app";
 import { getFunctions, httpsCallable, HttpsCallableResult } from "firebase/functions";
 import { getAnalytics } from "firebase/analytics";
-import { LocationSubmitData } from "../types";
+import { getFirestore, doc, getDoc, Firestore } from "firebase/firestore";
+import { LocationSubmitData, BeeData } from "../types";
 
 // --- Types ---
 // This defines the shape of the data returned from our backend function.
 interface GenerationResult {
     speciesName: string;
     fact: string;
-    image: string; // This is a base64 encoded string
+    // Backend may return either a public imageUrl or an inline base64 `image`.
+    image?: string; // base64 encoded string
+    imageUrl?: string; // public URL to the uploaded image
 }
 
 // --- Firebase Configuration ---
+// Read env vars from Vite's `import.meta.env` when available. In some
+// TypeScript or Node contexts (tests, SSR) `import.meta.env` may not be
+// present. We provide a fallback to `process.env` for those cases.
+const env = (typeof import.meta !== 'undefined' && (import.meta as any).env)
+    ? (import.meta as any).env
+    : (typeof process !== 'undefined' ? process.env : {});
+
 // Your web app's Firebase configuration, loaded from environment variables.
 const firebaseConfig = {
-    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-    appId: import.meta.env.VITE_FIREBASE_APP_ID,
-    measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+        apiKey: env.VITE_FIREBASE_API_KEY,
+        authDomain: env.VITE_FIREBASE_AUTH_DOMAIN,
+        projectId: env.VITE_FIREBASE_PROJECT_ID,
+        storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET,
+        messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+        appId: env.VITE_FIREBASE_APP_ID,
+        measurementId: env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
 // --- Firebase Initialization ---
 const app = initializeApp(firebaseConfig);
 const functions = getFunctions(app);
 const analytics = getAnalytics(app);
+// Initialize Firestore and export it for app-wide usage
+export const db: Firestore = getFirestore(app);
+
+/**
+ * Fetch a bee document from the 'bees' collection by its ID.
+ * Returns the document data object or null if not found.
+ */
+export async function fetchBeeData(beeId: string): Promise<BeeData | null> {
+    if (!beeId) return null;
+    try {
+        const beeDocRef = doc(db, "bees", beeId);
+        const docSnap = await getDoc(beeDocRef);
+        if (docSnap.exists()) {
+            return docSnap.data() as BeeData;
+        }
+        return null;
+    } catch (err) {
+        console.error("Error getting bee document:", err);
+        throw err;
+    }
+}
 
 // --- Secure V2 Cloud Function Caller ---
 

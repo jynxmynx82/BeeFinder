@@ -37,7 +37,11 @@ function App() {
 
       console.log("V2 Generation complete.");
 
-      const imageUrl = `data:image/png;base64,${result.image}`;
+      // Backend returns either a public `imageUrl` (preferred) or an inline Base64 `image`.
+      // Use the public URL when present; fall back to inline Base64 only if available.
+      const imageUrl = result.imageUrl
+        ? result.imageUrl
+        : (result.image ? `data:image/png;base64,${result.image}` : null);
 
       setImageData({
         url: imageUrl,

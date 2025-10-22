@@ -1,6 +1,7 @@
 
 import * as functions from "firebase-functions/v1";
 import {initializeApp} from "firebase-admin/app";
+import {getStorage} from "firebase-admin/storage";
 import fetch from "node-fetch";
 
 import {
@@ -37,7 +38,9 @@ const imageGenerationConfig = {
   topP: 1,
   topK: 32,
   maxOutputTokens: 4096,
-  responseMimeType: "image/png",
+  // Do not set responseMimeType for the image-capable model; some
+  // image models don't support JSON/text-only modes. Let the client
+  // use the SDK defaults so the model returns image parts inline.
 };
 
 const textGenerationConfig = {
@@ -160,30 +163,171 @@ export const generateImageAndText = functions.https.onCall(async (data) => {
       "object with two keys: 'speciesName' (the common name of the bee) " +
       "and 'fact' (a surprising, one-sentence fact about that bee).",
     ]);
-    const cleanedText = textResult.response.text()
-      .replace(/```json/g, "").replace(/```/g, "").trim();
-    const parsedText = JSON.parse(cleanedText);
+    const rawText = textResult.response.text();
+    const cleanedText = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
+    let parsedText;
+    try {
+      parsedText = JSON.parse(cleanedText);
+    } catch (e) {
+      // Attempt to extract a JSON object from the response if the model
+      // wrapped it in text or added explanation. This helps when models
+      // respond with extra commentary before/after the JSON blob.
+      const jsonMatch = cleanedText.match(/\{[\s\S]*\}/m);
+      if (jsonMatch) {
+        try {
+          parsedText = JSON.parse(jsonMatch[0]);
+        } catch (e2) {
+          console.error('Failed to parse extracted JSON from Gemini response:', jsonMatch[0]);
+        }
+      }
+      if (!parsedText) {
+        console.error('Gemini response is not valid JSON:', rawText);
+        // Include the raw response in the error message for easier debugging
+        throw new functions.https.HttpsError('internal', 'Gemini API did not return valid JSON. Raw response: ' + String(rawText).slice(0, 200));
+      }
+    }
 
     // --- 4b. Generate Image ---
+    // Ensure we never pass a responseMimeType to the image model. Some
+    // image-capable models don't support JSON/text mode; remove that key
+    // if present to force SDK/model defaults for image output.
+    const imageGenConfig = { ...imageGenerationConfig } as any;
+    if ('responseMimeType' in imageGenConfig) {
+      delete imageGenConfig.responseMimeType;
+    }
     const imageModel = genAI.getGenerativeModel({
       model: "gemini-2.5-flash-image",
-      generationConfig: imageGenerationConfig,
+      generationConfig: imageGenConfig,
       safetySettings,
     });
-    const imageResult = await imageModel.generateContent(prompt);
-    const imagePart = imageResult.response.candidates?.[0]?.content.parts[0];
-    if (!imagePart || !("inlineData" in imagePart) || !imagePart.inlineData) {
-      throw new Error("Image generation failed: No image data was " +
-        "received from the model.");
+    let imageResult;
+    // Log the actual generation config being used (after removing responseMimeType)
+    functions.logger.info('Calling imageModel.generateContent with generationConfig:', imageGenConfig);
+    try {
+      imageResult = await imageModel.generateContent(prompt);
+    } catch (err: any) {
+      // If the error indicates the response_mime_type was invalid, retry
+      // with a permissive text mime type. This addresses cases where some
+      // image-capable models reject non-text mime types sent in
+      // generationConfig.
+      const message = String(err?.message || err);
+      // Serialize error object more fully for logs
+      let serializedErr = message;
+      try {
+        const plain = JSON.stringify(err, Object.getOwnPropertyNames(err));
+        serializedErr = plain;
+      } catch (sErr) {
+        // fall back to message
+      }
+      functions.logger.warn('Initial image generation failed, inspecting error for retry. err=', serializedErr);
+      // Retry when the error indicates JSON/text mode or response_mime_type
+      // is not supported by this model (covers variations like
+      // "JSON mode is not enabled for this model" or messages about
+      // allowed mimetypes).
+      if (
+        message.includes('response_mime_type') ||
+        message.includes('allowed mimetypes') ||
+        /json mode/i.test(message)
+      ) {
+        functions.logger.info('Retrying image generation with responseMimeType="text/plain"');
+        try {
+          const fallbackConfig = {
+            ...imageGenerationConfig,
+            responseMimeType: 'text/plain',
+          };
+          const fallbackImageModel = genAI.getGenerativeModel({
+            model: 'gemini-2.5-flash-image',
+            generationConfig: fallbackConfig,
+            safetySettings,
+          });
+          imageResult = await fallbackImageModel.generateContent(prompt);
+        } catch (err2) {
+          functions.logger.error('Fallback image generation also failed:', err2);
+          throw new functions.https.HttpsError('internal', 'Image generation failed after retry. See logs for details.');
+        }
+      } else {
+        // Surface other failures
+        functions.logger.error('Image generation call failed:', err);
+        throw new functions.https.HttpsError('internal', 'Image generation failed. See logs for details.');
+      }
     }
-    const imageBase64 = imagePart.inlineData.data;
+    let imageResultCandidate = imageResult;
+    let imagePart = imageResultCandidate.response.candidates?.[0]?.content.parts[0];
+    // If the model didn't return inline image data, retry once — models can be flaky.
+    if (!imagePart || !('inlineData' in imagePart) || !imagePart.inlineData || !imagePart.inlineData.data) {
+      functions.logger.warn('Image generation returned no inlineData on first attempt. Retrying once. Full response:', imageResultCandidate);
+      try {
+        imageResultCandidate = await imageModel.generateContent(prompt);
+        imagePart = imageResultCandidate.response.candidates?.[0]?.content.parts[0];
+      } catch (retryErr) {
+        functions.logger.warn('Retry for image generation failed:', retryErr);
+      }
+    }
 
-    // --- 5. Return Combined Result ---
-    return {
-      speciesName: parsedText.speciesName,
-      fact: parsedText.fact,
-      image: imageBase64,
-    };
+    // If after retry there is still no inline image data, don't throw an INTERNAL
+    // error. Return the parsed text and a null imageUrl so the client can handle
+    // missing images gracefully.
+    if (!imagePart || !('inlineData' in imagePart) || !imagePart.inlineData || !imagePart.inlineData.data) {
+      functions.logger.error('Image generation returned unexpected response after retry:', imageResultCandidate);
+      return {
+        speciesName: parsedText.speciesName,
+        fact: parsedText.fact,
+        imageUrl: null,
+      };
+    }
+
+    const imageBase64 = imagePart.inlineData.data;
+    const mimeType = imagePart.inlineData.mimeType || 'image/png';
+
+    // --- 5. Upload image to Cloud Storage and return public URL ---
+    // Assumption: either a default bucket is configured for the Admin SDK
+    // or a bucket name is provided via functions.config().storage.bucket
+    try {
+      const bucketNameFromConfig = functions.config().storage?.bucket;
+      const storage = getStorage();
+      const bucket = bucketNameFromConfig ? storage.bucket(bucketNameFromConfig) : storage.bucket();
+
+      if (!bucket) {
+        throw new functions.https.HttpsError('internal', 'Cloud Storage bucket not configured. Set functions.config().storage.bucket or configure a default bucket in your Firebase project.');
+      }
+
+      // Build filename under images/ so we can later separate from video outputs
+      const timestamp = Date.now();
+      const rnd = Math.random().toString(36).slice(2, 8);
+      const extension = mimeType.split('/')[1] || 'png';
+      const filePath = `images/generated/${timestamp}-${rnd}.${extension}`;
+
+      const file = bucket.file(filePath);
+      const buffer = Buffer.from(imageBase64, 'base64');
+
+      // Save buffer to GCS
+      await file.save(buffer, {
+        metadata: {
+          contentType: mimeType,
+        },
+      });
+
+      // Make the file publicly readable
+      await file.makePublic();
+
+      const publicUrl = `https://storage.googleapis.com/${bucket.name}/${encodeURI(filePath)}`;
+
+      // Log only size and path to avoid spamming logs with the Base64 payload
+      functions.logger.info('Uploaded generated image to Cloud Storage', {
+        bucket: bucket.name,
+        path: filePath,
+        bytes: buffer.length,
+      });
+
+      return {
+        speciesName: parsedText.speciesName,
+        fact: parsedText.fact,
+        imageUrl: publicUrl,
+      };
+    } catch (storageErr) {
+      functions.logger.error('Failed to upload image to Cloud Storage:', storageErr);
+      throw new functions.https.HttpsError('internal', 'Failed to store generated image. See logs for details.');
+    }
   } catch (error) {
     functions.logger.error("Error in generateImageAndText function:", error);
     // Propagate HttpsError or create a generic one
