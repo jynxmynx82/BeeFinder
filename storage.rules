@@ -8,12 +8,5 @@ service firebase.storage {
       // Disallow public write access. Only the backend (via Admin SDK) can write.
       allow write: if false;
     }
-    
-    // Allow anyone to read files in the 'images' directory
-    match /images/{imageId} {
-      allow read;
-      // Disallow public write access. Only the backend (via Admin SDK) can write.
-      allow write: if false;
-    }
   }
 }

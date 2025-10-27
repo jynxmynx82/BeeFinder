@@ -1,3 +1,4 @@
+
 import * as functions from "firebase-functions/v1";
 import {initializeApp} from "firebase-admin/app";
 import {getStorage} from "firebase-admin/storage";
@@ -358,39 +359,11 @@ export const generateImageAndText = functions.https.onCall(async (data) => {
   }
 });
 
-// --- Helper function for exponential backoff retry ---
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-const retryWithBackoff = async <T>(
-  operation: () => Promise<T>,
-  maxRetries: number = 3,
-  baseDelay: number = 1000
-): Promise<T> => {
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await operation();
-    } catch (error: any) {
-      const isRateLimit = error?.status === 429 || 
-                         error?.message?.includes('rate limit') ||
-                         error?.message?.includes('resources exhausted');
-      
-      if (isRateLimit && attempt < maxRetries) {
-        const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
-        functions.logger.warn(`Rate limit hit, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries + 1})`);
-        await sleep(delay);
-        continue;
-      }
-      throw error;
-    }
-  }
-  throw new Error('Max retries exceeded');
-};
-
-// --- Video Generation Function using Vertex AI Veo 3.0 Fast ---
+// --- Video Generation Function using Vertex AI Veo 2.0 ---
 export const generateVideo3 = functions
   .runWith({ timeoutSeconds: 540 })
   .https.onCall(async (data) => {
-    const { imageUrl, prompt } = data;
+    const { imageUrl, duration = 2, prompt } = data;
 
     if (!imageUrl || typeof imageUrl !== "string") {
       throw new functions.https.HttpsError(
@@ -400,166 +373,73 @@ export const generateVideo3 = functions
     }
 
     try {
-      // 1. Fetch the image from the public bucket URL
-      const imageResponse = await fetch(imageUrl);
-      if (!imageResponse.ok) {
-        throw new functions.https.HttpsError(
-          "internal",
-          "Failed to fetch image from storage bucket."
-        );
-      }
-      
-      const imageBuffer = await imageResponse.arrayBuffer();
-      const imageBase64 = Buffer.from(imageBuffer).toString('base64');
-      const imageMimeType = imageResponse.headers.get('content-type') || 'image/png';
+      const { VertexAI } = await import("@google-cloud/vertexai");
 
-      // 2. Get the same bucket configuration as the image function
-      const bucketNameFromConfig = functions.config().storage?.bucket;
-      const storage = getStorage();
-      const bucket = bucketNameFromConfig ? storage.bucket(bucketNameFromConfig) : storage.bucket();
-
-      if (!bucket) {
-        throw new functions.https.HttpsError('internal', 'Cloud Storage bucket not configured. Set functions.config().storage.bucket or configure a default bucket in your Firebase project.');
-      }
-
-      // 3. Get access token for Vertex AI authentication
-      const { GoogleAuth } = await import('google-auth-library');
-      const auth = new GoogleAuth({
-        scopes: ['https://www.googleapis.com/auth/cloud-platform']
+      const vertex = new VertexAI({
+        project: process.env.GCLOUD_PROJECT,
+        location: "us-central1",
       });
-      const accessToken = await auth.getAccessToken();
 
-      // 4. Send request to Vertex AI with Veo 3.0 Fast model using retry logic
-      const videoPrompt = prompt || 
-        `A cinematic macro video (4 seconds) showing bees pollinating bright wildflowers in natural light.`;
+      const model = vertex.getGenerativeModel({
+        model: "veo-2.0-generate-001",
+      });
 
-      const makeVertexRequest = async () => {
-        const vertexResponse = await fetch(
-          `https://us-central1-aiplatform.googleapis.com/v1/projects/${process.env.GCLOUD_PROJECT}/locations/us-central1/publishers/google/models/veo-3.0-fast-generate-001:predict`,
-          {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${accessToken}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              instances: [
-                {
-                  prompt: videoPrompt,
-                  image: {
-                    bytesBase64Encoded: imageBase64,
-                    mimeType: imageMimeType
-                  }
-                }
-              ],
-              parameters: {
-                storageUri: `gs://${bucket.name}/videos/generated/`,
-                sampleCount: 1,
-                durationSeconds: 4,
-                aspectRatio: "16:9",
-                generateAudio: false,
-                resizeMode: "FIT"
-              }
-            })
+      const videoPrompt =
+        prompt ||
+        `A cinematic macro video (${duration} seconds) showing bees pollinating bright wildflowers in natural light.`;
+
+      const result = await model.generateContent({
+        contents: [{
+          role: "user",
+          parts: [{ text: videoPrompt }]
+        }]
+      });
+
+      // Extract inline video data
+      const candidate = result?.response?.candidates?.[0];
+      let videoData: string | null = null;
+
+      if (candidate?.content?.parts) {
+        for (const part of candidate.content.parts) {
+          if (part.inlineData?.mimeType?.startsWith("video/")) {
+            videoData = part.inlineData.data;
+            break;
           }
-        );
-
-        if (!vertexResponse.ok) {
-          const errorText = await vertexResponse.text();
-          const error = new Error(`Vertex AI request failed: ${errorText}`);
-          (error as any).status = vertexResponse.status;
-          throw error;
         }
+      }
 
-        return await vertexResponse.json();
-      };
-
-      // Use retry logic for the Vertex AI request
-      const vertexResult = await retryWithBackoff(makeVertexRequest, 3, 2000);
-      
-      // 5. Handle the response - Vertex AI will store the video at the storageUri
-      // The response should contain the path to the generated video
-      const generatedVideoPath = vertexResult.predictions?.[0]?.outputUri || 
-        vertexResult.predictions?.[0]?.videoUri;
-
-      if (!generatedVideoPath) {
-        functions.logger.error('Vertex AI response missing video path:', vertexResult);
+      if (!videoData) {
         throw new functions.https.HttpsError(
           "internal",
-          "Vertex AI did not return a video path."
+          "Vertex AI did not return any video data."
         );
       }
 
-      // 6. Make the generated video public (if not already)
-      const videoFile = bucket.file(generatedVideoPath.replace(`gs://${bucket.name}/`, ''));
-      await videoFile.makePublic();
+      const buffer = Buffer.from(videoData, "base64");
+      const storage = getStorage();
+      const bucket = storage.bucket();
+      const timestamp = Date.now();
+      const rnd = Math.random().toString(36).slice(2, 8);
+      const filePath = `videos/generated/${timestamp}-${rnd}.mp4`;
 
-      const publicUrl = `https://storage.googleapis.com/${bucket.name}/${encodeURI(generatedVideoPath.replace(`gs://${bucket.name}/`, ''))}`;
+      const file = bucket.file(filePath);
+      await file.save(buffer, { metadata: { contentType: "video/mp4" } });
+      await file.makePublic();
 
-      functions.logger.info('Generated video stored in Cloud Storage', {
-        bucket: bucket.name,
-        path: generatedVideoPath.replace(`gs://${bucket.name}/`, ''),
-        publicUrl: publicUrl
-      });
+      const publicUrl = `https://storage.googleapis.com/${bucket.name}/${encodeURI(filePath)}`;
 
       return {
         videoUrl: publicUrl,
-        duration: 4,
+        duration,
         originalImageUrl: imageUrl,
         status: "completed",
       };
     } catch (error) {
       functions.logger.error("Error in generateVideo3:", error);
-      
-      // If it's a rate limit error, return a more user-friendly message
-      if (error instanceof Error && 
-          (error.message.includes('429') || 
-           error.message.includes('rate limit') || 
-           error.message.includes('resources exhausted'))) {
-        throw new functions.https.HttpsError(
-          "resource-exhausted",
-          "Video generation is temporarily unavailable due to high demand. Please try again in a few minutes."
-        );
-      }
-      
       if (error instanceof functions.https.HttpsError) throw error;
       throw new functions.https.HttpsError(
         "internal",
         "An unexpected error occurred during video generation."
-      );
-    }
-  });
-
-// --- Fallback Video Generation Function (when primary fails) ---
-export const generateVideoFallback = functions
-  .runWith({ timeoutSeconds: 60 })
-  .https.onCall(async (data) => {
-    const { imageUrl } = data;
-
-    if (!imageUrl || typeof imageUrl !== "string") {
-      throw new functions.https.HttpsError(
-        "invalid-argument",
-        "The function must be called with a valid 'imageUrl' string."
-      );
-    }
-
-    try {
-      // Return a response indicating video generation is unavailable
-      // but the image is still available for display
-      functions.logger.info('Video generation fallback called - returning image-only response');
-      
-      return {
-        videoUrl: null,
-        duration: 0,
-        originalImageUrl: imageUrl,
-        status: "unavailable",
-        message: "Video generation is temporarily unavailable. The bee image is still available to view."
-      };
-    } catch (error) {
-      functions.logger.error("Error in generateVideoFallback:", error);
-      throw new functions.https.HttpsError(
-        "internal",
-        "An unexpected error occurred in fallback function."
       );
     }
   });

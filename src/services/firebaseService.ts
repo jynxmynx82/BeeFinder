@@ -3,7 +3,7 @@ import { initializeApp } from "firebase/app";
 import { getFunctions, httpsCallable, HttpsCallableResult } from "firebase/functions";
 import { getAnalytics } from "firebase/analytics";
 import { getFirestore, doc, getDoc, Firestore } from "firebase/firestore";
-import { LocationSubmitData, BeeData } from "../types";
+import { LocationSubmitData, BeeData, VideoGenerationInput, VideoData } from "../types";
 
 // --- Types ---
 // This defines the shape of the data returned from our backend function.
@@ -85,6 +85,28 @@ export const callGenerateImageAndText = async (locationData: LocationSubmitData)
     // The actual data returned by the function is in the `data` property of the result.
     // We cast it to our GenerationResult type for type safety.
     return result.data as GenerationResult;
+};
+
+// --- Video Generation Function ---
+const generateVideo3Callable = httpsCallable(functions, 'generateVideo3');
+const generateVideoFallbackCallable = httpsCallable(functions, 'generateVideoFallback');
+
+export const generateVideo2 = async (input: VideoGenerationInput): Promise<VideoData> => {
+    try {
+        const result = await generateVideo3Callable(input);
+        return result.data as VideoData;
+    } catch (error: any) {
+        // If it's a rate limit error, try the fallback function
+        if (error.code === 'resource-exhausted' || 
+            error.message?.includes('temporarily unavailable') ||
+            error.message?.includes('high demand')) {
+            console.log('Video generation rate limited, using fallback...');
+            const fallbackResult = await generateVideoFallbackCallable({ imageUrl: input.imageUrl });
+            return fallbackResult.data as VideoData;
+        }
+        // Re-throw other errors
+        throw error;
+    }
 };
 
 // --- Deprecated V1 Function ---

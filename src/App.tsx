@@ -8,16 +8,20 @@ import { BeeView } from "@/src/components/BeeView";
 import { BeeFactCard } from "@/src/components/BeeFactCard";
 import { Loader } from "@/src/components/Loader";
 import { FunBeeIcon } from "@/src/components/icons/FunBeeIcon";
+import { GenerateVideoButton } from "@/src/components/GenerateVideoButton";
+import { VideoViewer } from "@/src/components/VideoViewer";
 
 // Secure, consolidated V2 Service
-import { callGenerateImageAndText } from "@/src/services/firebaseService";
+import { callGenerateImageAndText, generateVideo2 } from "@/src/services/firebaseService";
 
 // Types
-import { AppState, ImageData, LocationSubmitData } from "@/src/types";
+import { AppState, ImageData, LocationSubmitData, VideoData, VideoGenerationInput } from "@/src/types";
 
 function App() {
   const [appState, setAppState] = useState<AppState>("idle");
   const [imageData, setImageData] = useState<ImageData | null>(null);
+  const [videoData, setVideoData] = useState<VideoData | null>(null);
+  const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (locationData: LocationSubmitData) => {
@@ -30,6 +34,7 @@ function App() {
     setAppState("loading");
     setError(null);
     setImageData(null);
+    setVideoData(null);
 
     try {
       // Call the new, simplified service function that correctly handles the data payload.
@@ -59,6 +64,36 @@ function App() {
     }
   };
 
+  const handleGenerateVideo = async () => {
+    if (!imageData?.url) {
+      console.error("No image available for video generation");
+      return;
+    }
+
+    setIsGeneratingVideo(true);
+    setError(null);
+
+    try {
+      const videoInput: VideoGenerationInput = {
+        imageUrl: imageData.url,
+        duration: 4,
+        prompt: `A cinematic macro video (4 seconds) showing bees pollinating bright wildflowers in natural light.`
+      };
+
+      console.log("Starting video generation...");
+      const result = await generateVideo2(videoInput);
+      
+      console.log("Video generation complete:", result);
+      setVideoData(result);
+    } catch (err: any) {
+      console.error("An error occurred during video generation:", err);
+      const errorMessage = err.message || "An unknown error occurred during video generation. Please try again.";
+      setError(errorMessage);
+    } finally {
+      setIsGeneratingVideo(false);
+    }
+  };
+
   // ... (renderContent and JSX are unchanged) ...
   const renderContent = () => {
     switch (appState) {
@@ -80,6 +115,21 @@ function App() {
                 speciesName={imageData.speciesName}
                 fact={imageData.fact}
               />
+              <GenerateVideoButton
+                onGenerateVideo={handleGenerateVideo}
+                isLoading={isGeneratingVideo}
+                disabled={!imageData.url}
+              />
+              {videoData && (
+                <div className="mt-8">
+                  <VideoViewer
+                    videoUrl={videoData.videoUrl}
+                    duration={videoData.duration}
+                    status={videoData.status}
+                    message={videoData.message}
+                  />
+                </div>
+              )}
             </>
         );
       case "error":
@@ -92,61 +142,24 @@ function App() {
       case "idle":
       default:
         return (
-          <div className="text-center flex flex-col items-center gap-8 mt-16">
-            <div className="relative">
-              <div className="absolute inset-0 bg-gradient-to-r from-yellow-400 to-orange-400 rounded-full blur-xl opacity-30 animate-pulse"></div>
-              <FunBeeIcon className="icon-100 text-yellow-600 relative z-10 animate-bounce" />
-            </div>
-            <div className="max-w-2xl mx-auto">
-              <h2 className="text-3xl md:text-4xl font-bold text-gray-800 mb-4">
-                Ready to discover?
-              </h2>
-              <p className="text-xl text-gray-600 leading-relaxed">
-                Enter a US zipcode or city to generate a beautiful local bee scene and learn fascinating facts about the bees in your area!
-              </p>
-            </div>
-            <div className="flex gap-4 text-sm text-gray-500">
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-yellow-400 rounded-full"></div>
-                <span>AI-Generated Images</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-orange-400 rounded-full"></div>
-                <span>Local Bee Facts</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-amber-400 rounded-full"></div>
-                <span>Educational Content</span>
-              </div>
-            </div>
+          <div className="text-center text-gray-500 flex flex-col items-center gap-4 mt-8">
+            <FunBeeIcon className="icon-100" /> 
+            <p>Enter a US zipcode to generate a local bee scene!</p>
           </div>
         );
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-500 text-white font-sans">
-      {/* Background Pattern */}
-      <div className="absolute inset-0 opacity-10">
-        <div className="absolute top-10 left-10 w-20 h-20 bg-yellow-300 rounded-full animate-pulse"></div>
-        <div className="absolute top-32 right-20 w-16 h-16 bg-orange-300 rounded-full animate-pulse delay-1000"></div>
-        <div className="absolute bottom-20 left-32 w-12 h-12 bg-amber-300 rounded-full animate-pulse delay-2000"></div>
-        <div className="absolute bottom-40 right-10 w-24 h-24 bg-yellow-400 rounded-full animate-pulse delay-500"></div>
-      </div>
-      
-      {/* SIMPLE GREY BACKGROUND TEST */}
-      <div className="bg-green-500 text-white text-center p-4 font-bold text-2xl">
-        🟢 GREY BACKGROUND TEST - If you see a GREY background, the styling is working! 🟢
-      </div>
-      
+    <div className="min-h-screen bg-amber-50 text-gray-800 font-sans">
       <Header />
-      <main className="container mx-auto p-4 md:p-8 relative z-10">
-        <div className="max-w-4xl mx-auto">
+      <main className="container mx-auto p-4 md:p-8">
+        <div className="max-w-xl mx-auto">
           <LocationInput
             onSubmit={handleSubmit}
             isLoading={appState === "loading"}
           />
-          <div className="mt-12">{renderContent()}</div>
+          <div className="mt-8">{renderContent()}</div>
         </div>
       </main>
     </div>

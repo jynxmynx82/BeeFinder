@@ -42,106 +42,87 @@ export const LocationInput: React.FC<LocationInputProps> = ({ onSubmit, isLoadin
   const inactiveTabClass = "bg-white text-gray-600 hover:bg-yellow-100";
 
   return (
-    <div className="mt-8 max-w-2xl mx-auto">
-      <div className="bg-gradient-to-r from-yellow-100 via-amber-100 to-orange-100 rounded-2xl p-2 shadow-lg border-2 border-yellow-200 mb-6">
-        <div className="flex justify-center">
-          <button 
-              onClick={() => { setMode('zipcode'); setError('')}} 
-              className={`w-1/2 py-3 px-6 rounded-xl font-bold text-lg transition-all duration-300 transform hover:scale-105 ${mode === 'zipcode' ? 'bg-gradient-to-r from-yellow-500 to-orange-500 text-white shadow-lg' : 'text-gray-600 hover:text-yellow-600'}`}
-              aria-pressed={mode === 'zipcode'}
-          >
-              📍 By Zipcode
-          </button>
-          <button 
-              onClick={() => { setMode('cityState'); setError('')}} 
-              className={`w-1/2 py-3 px-6 rounded-xl font-bold text-lg transition-all duration-300 transform hover:scale-105 ${mode === 'cityState' ? 'bg-gradient-to-r from-yellow-500 to-orange-500 text-white shadow-lg' : 'text-gray-600 hover:text-yellow-600'}`}
-              aria-pressed={mode === 'cityState'}
-          >
-              🏙️ By City / State
-          </button>
-        </div>
+    <div className="mt-8 max-w-lg mx-auto">
+      <div className="flex justify-center mb-4 rounded-lg p-1 bg-gray-200">
+        <button 
+            onClick={() => { setMode('zipcode'); setError('')}} 
+            className={`w-1/2 py-2 px-4 rounded-md font-semibold transition ${mode === 'zipcode' ? activeTabClass : inactiveTabClass}`}
+            aria-pressed={mode === 'zipcode'}
+        >
+            By Zipcode
+        </button>
+        <button 
+            onClick={() => { setMode('cityState'); setError('')}} 
+            className={`w-1/2 py-2 px-4 rounded-md font-semibold transition ${mode === 'cityState' ? activeTabClass : inactiveTabClass}`}
+            aria-pressed={mode === 'cityState'}
+        >
+            By City / State
+        </button>
       </div>
 
       <form onSubmit={handleSubmit}>
-        <div className="bg-white rounded-2xl shadow-xl p-8 border-2 border-yellow-200">
-          {mode === 'zipcode' ? (
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-              <div className="w-full">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  🏠 Enter your zipcode
-                </label>
-                <input
-                  type="text"
-                  value={zipcode}
-                  onChange={(e) => setZipcode(e.target.value)}
-                  placeholder="12345"
-                  disabled={isLoading}
-                  maxLength={5}
-                  className="w-full px-6 py-4 text-xl border-2 border-yellow-300 rounded-xl focus:ring-4 focus:ring-yellow-200 focus:border-yellow-500 transition-all duration-300 disabled:bg-gray-100 disabled:cursor-not-allowed shadow-inner"
-                  aria-label="Zipcode input"
-                />
-              </div>
-              <button
-                type="submit"
+        {mode === 'zipcode' ? (
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+            <div className="w-full">
+              <input
+                type="text"
+                value={zipcode}
+                onChange={(e) => setZipcode(e.target.value)}
+                placeholder="Enter your 5-digit zipcode"
                 disabled={isLoading}
-                className="w-full sm:w-auto px-8 py-4 text-xl font-bold text-white bg-gradient-to-r from-yellow-500 to-orange-500 rounded-xl hover:from-yellow-600 hover:to-orange-600 focus:outline-none focus:ring-4 focus:ring-yellow-200 transition-all duration-300 disabled:bg-gray-400 disabled:cursor-wait whitespace-nowrap shadow-lg hover:shadow-xl transform hover:scale-105 disabled:transform-none"
-              >
-                {isLoading ? '🔍 Searching...' : '🐝 Find a Bee'}
-              </button>
+                maxLength={5}
+                className="w-full px-4 py-3 text-lg border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 transition duration-200 disabled:bg-gray-200 disabled:cursor-not-allowed"
+                aria-label="Zipcode input"
+              />
             </div>
-          ) : (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    🏙️ City name
-                  </label>
-                  <input
-                      type="text"
-                      value={city}
-                      onChange={(e) => setCity(e.target.value)}
-                      placeholder="San Francisco"
-                      disabled={isLoading}
-                      className="w-full px-6 py-4 text-xl border-2 border-yellow-300 rounded-xl focus:ring-4 focus:ring-yellow-200 focus:border-yellow-500 transition-all duration-300 disabled:bg-gray-100 disabled:cursor-not-allowed shadow-inner"
-                      aria-label="City input"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    🗺️ State
-                  </label>
-                  <select
-                      value={state}
-                      onChange={(e) => setState(e.target.value)}
-                      disabled={isLoading}
-                      className="w-full px-6 py-4 text-xl border-2 border-yellow-300 rounded-xl focus:ring-4 focus:ring-yellow-200 focus:border-yellow-500 transition-all duration-300 disabled:bg-gray-100 disabled:cursor-not-allowed appearance-none bg-white bg-no-repeat bg-right-4 shadow-inner"
-                      style={{backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`, backgroundSize: '1.5em 1.5em' }}
-                      aria-label="State selection"
-                  >
-                      <option value="" disabled>Select a state</option>
-                      {US_STATES.map(s => (
-                          <option key={s.abbreviation} value={s.abbreviation}>{s.name}</option>
-                      ))}
-                  </select>
-                </div>
-              </div>
-              <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="w-full px-8 py-4 text-xl font-bold text-white bg-gradient-to-r from-yellow-500 to-orange-500 rounded-xl hover:from-yellow-600 hover:to-orange-600 focus:outline-none focus:ring-4 focus:ring-yellow-200 transition-all duration-300 disabled:bg-gray-400 disabled:cursor-wait shadow-lg hover:shadow-xl transform hover:scale-105 disabled:transform-none"
-              >
-                  {isLoading ? '🔍 Searching...' : '🐝 Find a Bee'}
-              </button>
-            </div>
-          )}
-          {error && (
-            <div className="mt-4 p-4 bg-red-50 border-2 border-red-200 rounded-xl">
-              <p className="text-red-600 text-center font-semibold" role="alert">
-                ⚠️ {error}
-              </p>
-            </div>
-          )}
-        </div>
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full sm:w-auto px-6 py-3 text-lg font-semibold text-white bg-yellow-500 rounded-lg hover:bg-yellow-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500 transition duration-200 disabled:bg-gray-400 disabled:cursor-wait whitespace-nowrap"
+            >
+              {isLoading ? 'Searching...' : 'Find a Bee'}
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+             <div className="sm:col-span-2">
+                <input
+                    type="text"
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    placeholder="Enter city name"
+                    disabled={isLoading}
+                    className="w-full px-4 py-3 text-lg border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 transition duration-200 disabled:bg-gray-200 disabled:cursor-not-allowed"
+                    aria-label="City input"
+                />
+             </div>
+             <div className="w-full">
+                <select
+                    value={state}
+                    onChange={(e) => setState(e.target.value)}
+                    disabled={isLoading}
+                    className="w-full px-4 py-3 text-lg border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 transition duration-200 disabled:bg-gray-200 disabled:cursor-not-allowed appearance-none bg-white bg-no-repeat bg-right-2.5"
+                    style={{backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`, backgroundSize: '1.5em 1.5em' }}
+                    aria-label="State selection"
+                >
+                    <option value="" disabled>State</option>
+                    {US_STATES.map(s => (
+                        <option key={s.abbreviation} value={s.abbreviation}>{s.name}</option>
+                    ))}
+                </select>
+             </div>
+             <div className="sm:col-span-3">
+                <button
+                    type="submit"
+                    disabled={isLoading}
+                    className="w-full px-6 py-3 text-lg font-semibold text-white bg-yellow-500 rounded-lg hover:bg-yellow-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500 transition duration-200 disabled:bg-gray-400 disabled:cursor-wait whitespace-nowrap"
+                >
+                    {isLoading ? 'Searching...' : 'Find a Bee'}
+                </button>
+             </div>
+          </div>
+        )}
+        {error && <p className="text-red-500 text-sm mt-2 text-center" role="alert">{error}</p>}
       </form>
     </div>
   );

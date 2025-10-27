@@ -64,3 +64,19 @@ export interface ImageData {
   speciesName?: string;
   fact?: string;
 }
+
+// Video generation input data
+export interface VideoGenerationInput {
+  imageUrl: string;
+  duration?: number;
+  prompt?: string;
+}
+
+// Video generation result data
+export interface VideoData {
+  videoUrl: string | null;
+  duration: number;
+  originalImageUrl: string;
+  status: string;
+  message?: string;
+}
